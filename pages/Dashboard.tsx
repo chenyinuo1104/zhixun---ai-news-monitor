@@ -1,8 +1,13 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { AreaChart, Area, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { NewsItem } from '../types';
+import { supabase } from '../lib/supabase';
 
 const Dashboard: React.FC = () => {
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Keep static chart data for now as per plan focus
   const data = [
     { time: '00:00', value: 30 },
     { time: '04:00', value: 45 },
@@ -19,26 +24,40 @@ const Dashboard: React.FC = () => {
     { name: 'Negative', value: 15, color: '#F97316' }, // Orange
   ];
 
-  const news: NewsItem[] = [
-    {
-      id: '1',
-      source: 'TechDaily',
-      time: '12m ago',
-      title: '某大型云服务商因垄断行为面临反垄断诉讼',
-      tags: ['科技'],
-      sentiment: 'negative',
-      imageUrl: 'https://picsum.photos/100/100?random=1',
-    },
-    {
-      id: '2',
-      source: 'GlobalFinance',
-      time: '45m ago',
-      title: '央行宣布下调存款准备金率0.5个百分点',
-      tags: ['金融', '政策'],
-      sentiment: 'positive',
-      imageUrl: 'https://picsum.photos/100/100?random=2',
-    }
-  ];
+  useEffect(() => {
+    const fetchNews = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('news')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.error('Error fetching news:', error);
+        } else if (data) {
+          // Map DB fields to frontend type if necessary, usually standardizing
+          // Assuming DB columns match NewsItem interface approximately
+          // We might need to adjust 'time' calculation to be 'ago'
+          const formattedNews = data.map((item: any) => ({
+            id: item.id,
+            source: item.source,
+            time: new Date(item.created_at).toLocaleDateString(), // Simplified time
+            title: item.title,
+            tags: item.tags || [],
+            sentiment: item.sentiment,
+            imageUrl: item.image_url
+          }));
+          setNews(formattedNews);
+        }
+      } catch (error) {
+        console.error('Error:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchNews();
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#F8F9FB] pb-32">
@@ -61,8 +80,8 @@ const Dashboard: React.FC = () => {
           <div className="absolute left-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
             <span className="material-symbols-outlined text-primary text-sm">smart_toy</span>
           </div>
-          <input 
-            type="text" 
+          <input
+            type="text"
             placeholder="✨ 问问 AI 现在的流行趋势..."
             className="w-full h-14 pl-14 pr-12 rounded-2xl border-none bg-white text-sm font-medium placeholder-slate-400 focus:ring-0"
           />
@@ -97,21 +116,21 @@ const Dashboard: React.FC = () => {
               <span className="material-symbols-outlined icon-filled">bar_chart</span>
             </div>
           </div>
-          
+
           <div className="h-24 w-[110%] -ml-[5%]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={data}>
                 <defs>
                   <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <Area type="monotone" dataKey="value" stroke="#8B5CF6" strokeWidth={3} fillOpacity={1} fill="url(#colorValue)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
-           <div className="flex justify-between text-[10px] text-slate-400 px-2 mt-1 font-medium">
+          <div className="flex justify-between text-[10px] text-slate-400 px-2 mt-1 font-medium">
             <span>00:00</span>
             <span>12:00</span>
             <span>18:00</span>
@@ -122,10 +141,10 @@ const Dashboard: React.FC = () => {
         <div className="glass-panel p-6 rounded-[32px] shadow-sm">
           <p className="text-xs text-slate-400 font-medium mb-1">情感分布</p>
           <h3 className="text-xl font-bold text-slate-800 mb-6">混合态势</h3>
-          
+
           <div className="flex items-center gap-6">
             <div className="relative w-32 h-32 flex-shrink-0">
-               <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
                     data={pieData}
@@ -153,7 +172,7 @@ const Dashboard: React.FC = () => {
               {pieData.map((item) => (
                 <div key={item.name} className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-full" style={{backgroundColor: item.color}}></div>
+                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }}></div>
                     <span className="text-xs font-medium text-slate-500">
                       {item.name === 'Positive' ? '积极' : item.name === 'Neutral' ? '中性' : '负面'}
                     </span>
@@ -176,7 +195,7 @@ const Dashboard: React.FC = () => {
           <button className="px-6 py-2.5 bg-white text-slate-600 rounded-full text-xs font-bold border border-slate-100 shadow-sm flex items-center gap-1 whitespace-nowrap">
             <span className="text-blue-500">🤖</span> 科技
           </button>
-           <button className="px-6 py-2.5 bg-white text-slate-600 rounded-full text-xs font-bold border border-slate-100 shadow-sm flex items-center gap-1 whitespace-nowrap">
+          <button className="px-6 py-2.5 bg-white text-slate-600 rounded-full text-xs font-bold border border-slate-100 shadow-sm flex items-center gap-1 whitespace-nowrap">
             <span className="text-pink-500">🎨</span> 人文
           </button>
         </div>
@@ -184,7 +203,7 @@ const Dashboard: React.FC = () => {
 
       {/* Realtime Feed */}
       <section className="px-6">
-         <div className="flex justify-between items-end mb-4">
+        <div className="flex justify-between items-end mb-4">
           <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
             <div className="w-1.5 h-5 bg-orange-500 rounded-full"></div>
             实时动态
@@ -192,38 +211,40 @@ const Dashboard: React.FC = () => {
         </div>
 
         <div className="flex flex-col gap-4">
-          {news.map(item => (
+          {loading ? (
+            <div className="text-center text-slate-400 py-10">Loading news...</div>
+          ) : news.map(item => (
             <div key={item.id} className="glass-panel p-4 rounded-3xl shadow-sm border border-slate-100 flex gap-4">
-               <div className="flex-1">
-                 <div className="flex items-center gap-2 mb-2">
-                    <div className="w-5 h-5 bg-slate-100 rounded-full flex items-center justify-center">
-                      <span className="material-symbols-outlined text-[14px] text-slate-500">public</span>
-                    </div>
-                    <span className="text-xs font-bold text-slate-600">{item.source}</span>
-                    <span className="text-[10px] text-slate-400">{item.time}</span>
-                 </div>
-                 <h3 className="text-sm font-bold text-slate-800 leading-relaxed mb-3 line-clamp-2">
-                   {item.title}
-                 </h3>
-                 <div className="flex gap-2">
-                    {item.tags.map(tag => (
-                      <span key={tag} className="text-[10px] font-bold px-2 py-0.5 bg-blue-50 text-blue-500 rounded-lg"># {tag}</span>
-                    ))}
-                    {item.sentiment === 'negative' && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 bg-orange-50 text-orange-500 rounded-lg flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[10px] icon-filled">warning</span> 负面
-                      </span>
-                    )}
-                     {item.sentiment === 'positive' && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 bg-green-50 text-green-500 rounded-lg flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[10px] icon-filled">thumb_up</span> 积极
-                      </span>
-                    )}
-                 </div>
-               </div>
-               <div className="w-20 h-20 bg-slate-200 rounded-2xl flex-shrink-0 overflow-hidden">
-                 <img src={item.imageUrl} alt="news" className="w-full h-full object-cover opacity-90" />
-               </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-5 h-5 bg-slate-100 rounded-full flex items-center justify-center">
+                    <span className="material-symbols-outlined text-[14px] text-slate-500">public</span>
+                  </div>
+                  <span className="text-xs font-bold text-slate-600">{item.source}</span>
+                  <span className="text-[10px] text-slate-400">{item.time}</span>
+                </div>
+                <h3 className="text-sm font-bold text-slate-800 leading-relaxed mb-3 line-clamp-2">
+                  {item.title}
+                </h3>
+                <div className="flex gap-2">
+                  {item.tags.map(tag => (
+                    <span key={tag} className="text-[10px] font-bold px-2 py-0.5 bg-blue-50 text-blue-500 rounded-lg"># {tag}</span>
+                  ))}
+                  {item.sentiment === 'negative' && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 bg-orange-50 text-orange-500 rounded-lg flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[10px] icon-filled">warning</span> 负面
+                    </span>
+                  )}
+                  {item.sentiment === 'positive' && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 bg-green-50 text-green-500 rounded-lg flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[10px] icon-filled">thumb_up</span> 积极
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="w-20 h-20 bg-slate-200 rounded-2xl flex-shrink-0 overflow-hidden">
+                <img src={item.imageUrl} alt="news" className="w-full h-full object-cover opacity-90" />
+              </div>
             </div>
           ))}
         </div>
