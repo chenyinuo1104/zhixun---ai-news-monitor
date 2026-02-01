@@ -8,6 +8,9 @@ export interface NewsItem {
   tags: string[];
   sentiment: 'positive' | 'negative' | 'neutral';
   imageUrl: string;
+  category?: 'tech' | 'finance' | 'culture' | 'policy';
+  isHighRisk?: boolean;
+  summary?: string;
 }
 
 export interface TrendItem {

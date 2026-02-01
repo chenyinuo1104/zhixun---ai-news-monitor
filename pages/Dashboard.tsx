@@ -6,6 +6,21 @@ import { supabase } from '../lib/supabase';
 const Dashboard: React.FC = () => {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeFilter, setActiveFilter] = useState<'all' | 'high-risk' | 'tech' | 'finance' | 'policy' | 'culture'>('all');
+
+  // Time formatting utility
+  const formatTimeAgo = (dateString: string): string => {
+    const date = new Date(dateString);
+    const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
+    if (seconds < 60) return '刚刚';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}分钟前`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}小时前`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}天前`;
+    return date.toLocaleDateString('zh-CN');
+  };
 
   // Keep static chart data for now as per plan focus
   const data = [
@@ -24,39 +39,77 @@ const Dashboard: React.FC = () => {
     { name: 'Negative', value: 15, color: '#F97316' }, // Orange
   ];
 
-  useEffect(() => {
-    const fetchNews = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('news')
-          .select('*')
-          .order('created_at', { ascending: false });
+  // Fetch news from Supabase
+  const fetchNews = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('news')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
 
-        if (error) {
-          console.error('Error fetching news:', error);
-        } else if (data) {
-          // Map DB fields to frontend type if necessary, usually standardizing
-          // Assuming DB columns match NewsItem interface approximately
-          // We might need to adjust 'time' calculation to be 'ago'
-          const formattedNews = data.map((item: any) => ({
-            id: item.id,
-            source: item.source,
-            time: new Date(item.created_at).toLocaleDateString(), // Simplified time
-            title: item.title,
-            tags: item.tags || [],
-            sentiment: item.sentiment,
-            imageUrl: item.image_url
-          }));
-          setNews(formattedNews);
-        }
-      } catch (error) {
-        console.error('Error:', error);
-      } finally {
-        setLoading(false);
+      if (error) {
+        console.error('Error fetching news:', error);
+      } else if (data) {
+        const formattedNews = data.map((item: any) => ({
+          id: item.id,
+          source: item.source,
+          time: formatTimeAgo(item.created_at),
+          title: item.title,
+          tags: item.tags || [],
+          sentiment: item.sentiment,
+          imageUrl: item.image_url,
+          category: item.category,
+          isHighRisk: item.is_high_risk,
+          summary: item.summary
+        }));
+        setNews(formattedNews);
       }
-    };
+    } catch (error) {
+      console.error('Error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
+    // Initial fetch
     fetchNews();
+
+    // Set up real-time subscription
+    const channel = supabase
+      .channel('news-changes')
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'news' },
+        (payload) => {
+          console.log('New news item:', payload.new);
+          const newItem: NewsItem = {
+            id: payload.new.id,
+            source: payload.new.source,
+            time: formatTimeAgo(payload.new.created_at),
+            title: payload.new.title,
+            tags: payload.new.tags || [],
+            sentiment: payload.new.sentiment,
+            imageUrl: payload.new.image_url,
+            category: payload.new.category,
+            isHighRisk: payload.new.is_high_risk,
+            summary: payload.new.summary
+          };
+          setNews(prev => [newItem, ...prev]);
+        }
+      )
+      .subscribe();
+
+    // Set up periodic refresh (every 30 seconds)
+    const intervalId = setInterval(() => {
+      fetchNews();
+    }, 30000);
+
+    // Cleanup
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(intervalId);
+    };
   }, []);
 
   return (
@@ -188,14 +241,58 @@ const Dashboard: React.FC = () => {
       {/* Filter Tabs */}
       <div className="px-6 mb-6 overflow-x-auto no-scrollbar">
         <div className="flex gap-3">
-          <button className="px-6 py-2.5 bg-slate-800 text-white rounded-full text-xs font-bold shadow-lg shadow-slate-200 whitespace-nowrap">全部</button>
-          <button className="px-6 py-2.5 bg-white text-slate-600 rounded-full text-xs font-bold border border-slate-100 shadow-sm flex items-center gap-1 whitespace-nowrap">
+          <button
+            onClick={() => setActiveFilter('all')}
+            className={`px-6 py-2.5 rounded-full text-xs font-bold shadow-lg whitespace-nowrap transition-all ${activeFilter === 'all'
+              ? 'bg-slate-800 text-white shadow-slate-200'
+              : 'bg-white text-slate-600 border border-slate-100 shadow-sm'
+              }`}
+          >
+            全部
+          </button>
+          <button
+            onClick={() => setActiveFilter('high-risk')}
+            className={`px-6 py-2.5 rounded-full text-xs font-bold flex items-center gap-1 whitespace-nowrap transition-all ${activeFilter === 'high-risk'
+              ? 'bg-slate-800 text-white shadow-lg shadow-slate-200'
+              : 'bg-white text-slate-600 border border-slate-100 shadow-sm'
+              }`}
+          >
             <span className="text-orange-500">🔥</span> 高风险
           </button>
-          <button className="px-6 py-2.5 bg-white text-slate-600 rounded-full text-xs font-bold border border-slate-100 shadow-sm flex items-center gap-1 whitespace-nowrap">
+          <button
+            onClick={() => setActiveFilter('tech')}
+            className={`px-6 py-2.5 rounded-full text-xs font-bold flex items-center gap-1 whitespace-nowrap transition-all ${activeFilter === 'tech'
+              ? 'bg-slate-800 text-white shadow-lg shadow-slate-200'
+              : 'bg-white text-slate-600 border border-slate-100 shadow-sm'
+              }`}
+          >
             <span className="text-blue-500">🤖</span> 科技
           </button>
-          <button className="px-6 py-2.5 bg-white text-slate-600 rounded-full text-xs font-bold border border-slate-100 shadow-sm flex items-center gap-1 whitespace-nowrap">
+          <button
+            onClick={() => setActiveFilter('finance')}
+            className={`px-6 py-2.5 rounded-full text-xs font-bold flex items-center gap-1 whitespace-nowrap transition-all ${activeFilter === 'finance'
+              ? 'bg-slate-800 text-white shadow-lg shadow-slate-200'
+              : 'bg-white text-slate-600 border border-slate-100 shadow-sm'
+              }`}
+          >
+            <span className="text-green-500">💰</span> 财经
+          </button>
+          <button
+            onClick={() => setActiveFilter('policy')}
+            className={`px-6 py-2.5 rounded-full text-xs font-bold flex items-center gap-1 whitespace-nowrap transition-all ${activeFilter === 'policy'
+              ? 'bg-slate-800 text-white shadow-lg shadow-slate-200'
+              : 'bg-white text-slate-600 border border-slate-100 shadow-sm'
+              }`}
+          >
+            <span className="text-red-500">📋</span> 政策
+          </button>
+          <button
+            onClick={() => setActiveFilter('culture')}
+            className={`px-6 py-2.5 rounded-full text-xs font-bold flex items-center gap-1 whitespace-nowrap transition-all ${activeFilter === 'culture'
+              ? 'bg-slate-800 text-white shadow-lg shadow-slate-200'
+              : 'bg-white text-slate-600 border border-slate-100 shadow-sm'
+              }`}
+          >
             <span className="text-pink-500">🎨</span> 人文
           </button>
         </div>
@@ -212,41 +309,64 @@ const Dashboard: React.FC = () => {
 
         <div className="flex flex-col gap-4">
           {loading ? (
-            <div className="text-center text-slate-400 py-10">Loading news...</div>
-          ) : news.map(item => (
-            <div key={item.id} className="glass-panel p-4 rounded-3xl shadow-sm border border-slate-100 flex gap-4">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-5 h-5 bg-slate-100 rounded-full flex items-center justify-center">
-                    <span className="material-symbols-outlined text-[14px] text-slate-500">public</span>
+            <div className="text-center text-slate-400 py-10">加载中...</div>
+          ) : (() => {
+            // Apply filter logic
+            const filteredNews = news.filter(item => {
+              if (activeFilter === 'all') return true;
+              if (activeFilter === 'high-risk') return item.isHighRisk === true;
+              if (activeFilter === 'tech') return item.category === 'tech';
+              if (activeFilter === 'finance') return item.category === 'finance';
+              if (activeFilter === 'policy') return item.category === 'policy';
+              if (activeFilter === 'culture') return item.category === 'culture';
+              return true;
+            });
+
+            if (filteredNews.length === 0) {
+              return (
+                <div className="text-center py-20">
+                  <div className="text-6xl mb-4">📭</div>
+                  <p className="text-slate-400 font-medium">暂无新闻</p>
+                  <p className="text-xs text-slate-300 mt-2">该分类下暂时没有内容</p>
+                </div>
+              );
+            }
+
+            return filteredNews.map(item => (
+              <div key={item.id} className="glass-panel p-4 rounded-3xl shadow-sm border border-slate-100 flex gap-4">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-5 h-5 bg-slate-100 rounded-full flex items-center justify-center">
+                      <span className="material-symbols-outlined text-[14px] text-slate-500">public</span>
+                    </div>
+                    <span className="text-xs font-bold text-slate-600">{item.source}</span>
+                    <span className="text-[10px] text-slate-400">{item.time}</span>
                   </div>
-                  <span className="text-xs font-bold text-slate-600">{item.source}</span>
-                  <span className="text-[10px] text-slate-400">{item.time}</span>
+                  <h3 className="text-sm font-bold text-slate-800 leading-relaxed mb-3 line-clamp-2">
+                    {item.title}
+                  </h3>
+                  <div className="flex gap-2">
+                    {item.tags.map(tag => (
+                      <span key={tag} className="text-[10px] font-bold px-2 py-0.5 bg-blue-50 text-blue-500 rounded-lg"># {tag}</span>
+                    ))}
+                    {item.sentiment === 'negative' && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 bg-orange-50 text-orange-500 rounded-lg flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[10px] icon-filled">warning</span> 负面
+                      </span>
+                    )}
+                    {item.sentiment === 'positive' && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 bg-green-50 text-green-500 rounded-lg flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[10px] icon-filled">thumb_up</span> 积极
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <h3 className="text-sm font-bold text-slate-800 leading-relaxed mb-3 line-clamp-2">
-                  {item.title}
-                </h3>
-                <div className="flex gap-2">
-                  {item.tags.map(tag => (
-                    <span key={tag} className="text-[10px] font-bold px-2 py-0.5 bg-blue-50 text-blue-500 rounded-lg"># {tag}</span>
-                  ))}
-                  {item.sentiment === 'negative' && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 bg-orange-50 text-orange-500 rounded-lg flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[10px] icon-filled">warning</span> 负面
-                    </span>
-                  )}
-                  {item.sentiment === 'positive' && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 bg-green-50 text-green-500 rounded-lg flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[10px] icon-filled">thumb_up</span> 积极
-                    </span>
-                  )}
+                <div className="w-20 h-20 bg-slate-200 rounded-2xl flex-shrink-0 overflow-hidden">
+                  <img src={item.imageUrl} alt="news" className="w-full h-full object-cover opacity-90" />
                 </div>
               </div>
-              <div className="w-20 h-20 bg-slate-200 rounded-2xl flex-shrink-0 overflow-hidden">
-                <img src={item.imageUrl} alt="news" className="w-full h-full object-cover opacity-90" />
-              </div>
-            </div>
-          ))}
+            ))
+          })()}
         </div>
       </section>
     </div>
