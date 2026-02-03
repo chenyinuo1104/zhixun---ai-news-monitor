@@ -2,6 +2,7 @@ import React from 'react';
 import { HashRouter as Router, Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import Landing from './pages/Landing';
 import Dashboard from './pages/Dashboard';
+import NewsDetail from './pages/NewsDetail';
 import Statistics from './pages/Statistics';
 import Assistant from './pages/Assistant';
 import Profile from './pages/Profile';
@@ -50,6 +51,14 @@ const AppRoutes: React.FC = () => {
           element={
             <ProtectedRoute>
               <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/news/:id"
+          element={
+            <ProtectedRoute>
+              <NewsDetail />
             </ProtectedRoute>
           }
         />

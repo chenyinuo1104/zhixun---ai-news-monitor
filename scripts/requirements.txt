@@ -3,3 +3,5 @@ python-dotenv
 feedparser
 jieba
 schedule
+requests
+beautifulsoup4

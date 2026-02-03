@@ -20,6 +20,8 @@ create table news (
   source text not null,
   title text not null,
   summary text,
+  content text,
+  link text,
   tags text[] default '{}',
   sentiment text check (sentiment in ('positive', 'neutral', 'negative')),
   image_url text,

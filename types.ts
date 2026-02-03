@@ -11,6 +11,8 @@ export interface NewsItem {
   category?: 'tech' | 'finance' | 'culture' | 'policy';
   isHighRisk?: boolean;
   summary?: string;
+  content?: string;
+  link?: string;
 }
 
 export interface TrendItem {

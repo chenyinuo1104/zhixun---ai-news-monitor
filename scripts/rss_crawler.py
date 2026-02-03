@@ -5,6 +5,8 @@ from datetime import datetime
 import time
 from dotenv import load_dotenv
 from supabase import create_client, Client
+import requests
+from bs4 import BeautifulSoup
 
 # 加载环境变量
 load_dotenv()
@@ -30,6 +32,55 @@ RSS_FEEDS = {
 }
 
 
+def fetch_article_content(url):
+    """
+    抓取新闻页面的完整正文内容
+    url: 新闻原文链接
+    返回: 正文内容字符串,如果抓取失败返回空字符串
+    """
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        response.encoding = response.apparent_encoding
+        
+        if response.status_code != 200:
+            print(f"   ⚠️  页面访问失败: {url} (状态码: {response.status_code})")
+            return ""
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # 移除script、style等无关标签
+        for tag in soup(['script', 'style', 'nav', 'header', 'footer', 'aside']):
+            tag.decompose()
+        
+        # 尝试多种常见的正文容器选择器
+        content = ""
+        
+        # 新华社文章结构
+        article_body = soup.find('div', {'id': 'detail'}) or \
+                      soup.find('div', {'class': 'article'}) or \
+                      soup.find('div', {'class': 'content'}) or \
+                      soup.find('article') or \
+                      soup.find('div', {'class': 'post-content'})
+        
+        if article_body:
+            # 提取所有段落
+            paragraphs = article_body.find_all('p')
+            content = '\n\n'.join([p.get_text().strip() for p in paragraphs if p.get_text().strip()])
+        
+        # 如果没有找到内容,尝试提取所有p标签
+        if not content:
+            paragraphs = soup.find_all('p')
+            content = '\n\n'.join([p.get_text().strip() for p in paragraphs if len(p.get_text().strip()) > 20])
+        
+        return content.strip() if content else ""
+        
+    except Exception as e:
+        print(f"   ❌ 抓取内容失败 {url}: {str(e)}")
+        return ""
+
 
 
 def fetch_news(feed_config, feed_name):
@@ -52,23 +103,41 @@ def fetch_news(feed_config, feed_name):
             # Handle different time formats or current time if missing
             published = entry.get("published", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
             
-            # 简单的摘要截断
-            summary = entry.get("summary", "")
-            if len(summary) > 500:
-                summary = summary[:497] + "..."
+            # 获取新闻链接
+            link = entry.get("link", "")
+            
+            # RSS的summary作为摘要
+            rss_summary = entry.get("summary", "")
+            
+            # 截取摘要(200字符)
+            summary = rss_summary
+            if len(summary) > 200:
+                summary = summary[:197] + "..."
+            
+            # 抓取完整正文内容
+            print(f"   📄 抓取正文: {entry.get('title', '')[:30]}...")
+            full_content = fetch_article_content(link) if link else ""
+            
+            # 如果抓取失败,使用RSS的summary作为内容
+            if not full_content:
+                full_content = rss_summary
+                print(f"   ⚠️  使用RSS摘要作为内容")
 
             news_item = {
                 "source": feed_name,
                 "title": entry.get("title", ""),
-                # "link": entry.get("link", ""), # Database 'news' table missing 'link' column currently
+                "link": link,
                 "summary": summary,
-                "tags": default_tags,  # 使用配置的标签
-                "sentiment": "neutral", # Default sentiment
-                "category": category,   # 使用配置的分类
-                "is_high_risk": is_high_risk_source  # 使用配置的风险级别
-                # "published": published, # Database uses created_at
+                "content": full_content,  # 保存完整抓取的内容
+                "tags": default_tags,
+                "sentiment": "neutral",
+                "category": category,
+                "is_high_risk": is_high_risk_source
             }
             news_list.append(news_item)
+            
+            # 避免请求过快被封
+            time.sleep(1)
 
         print(
             f"[+] Successfully fetched {len(news_list)} items from {feed_name}")

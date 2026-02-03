@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AreaChart, Area, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { NewsItem } from '../types';
 import { supabase } from '../lib/supabase';
 
 const Dashboard: React.FC = () => {
+  const navigate = useNavigate();
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<'all' | 'high-risk' | 'tech' | 'finance' | 'policy' | 'culture'>('all');
@@ -333,7 +335,11 @@ const Dashboard: React.FC = () => {
             }
 
             return filteredNews.map(item => (
-              <div key={item.id} className="glass-panel p-4 rounded-3xl shadow-sm border border-slate-100 flex gap-4">
+              <div
+                key={item.id}
+                onClick={() => navigate(`/news/${item.id}`)}
+                className="glass-panel p-4 rounded-3xl shadow-sm border border-slate-100 flex gap-4 cursor-pointer hover:shadow-md hover:border-primary/20 transition-all active:scale-[0.98]"
+              >
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-2">
                     <div className="w-5 h-5 bg-slate-100 rounded-full flex items-center justify-center">
