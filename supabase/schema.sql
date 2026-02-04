@@ -26,7 +26,7 @@ create table news (
   sentiment text check (sentiment in ('positive', 'neutral', 'negative')),
   image_url text,
   is_high_risk boolean default false,
-  category text
+  category text check (category in ('tech', 'finance', 'policy', 'culture'))
 );
 
 -- TRENDS TABLE

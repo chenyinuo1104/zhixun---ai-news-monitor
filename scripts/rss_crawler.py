@@ -21,12 +21,61 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# 新闻源配置 - 新华社
+# 新闻源配置 - 扩展多个分类
 RSS_FEEDS = {
+    # 政策类
     "新华社": {
         "url": "http://www.news.cn/politics/news_politics.xml",
         "category": "policy",
         "tags": ["时政", "新闻"],
+        "is_high_risk_source": False
+    },
+    
+    # 科技类
+    "36氪": {
+        "url": "https://36kr.com/feed",
+        "category": "tech",
+        "tags": ["科技", "创业"],
+        "is_high_risk_source": False
+    },
+    "InfoQ": {
+        "url": "https://www.infoq.cn/feed",
+        "category": "tech",
+        "tags": ["技术", "开发"],
+        "is_high_risk_source": False
+    },
+    "极客公园": {
+        "url": "http://www.geekpark.net/rss",
+        "category": "tech",
+        "tags": ["科技", "创新"],
+        "is_high_risk_source": False
+    },
+    
+    # 财经类
+    "新浪财经": {
+        "url": "https://finance.sina.com.cn/roll/index.d.html",
+        "category": "finance",
+        "tags": ["财经", "金融"],
+        "is_high_risk_source": False
+    },
+    "网易财经": {
+        "url": "http://money.163.com/special/002557S6/rss_news.xml",
+        "category": "finance",
+        "tags": ["财经", "市场"],
+        "is_high_risk_source": False
+    },
+    
+    # 人文类
+    "澎湃新闻": {
+        "url": "https://www.thepaper.cn/rss",
+        "category": "culture",
+        "tags": ["人文", "社会"],
+        "is_high_risk_source": False
+    },
+    "知乎日报": {
+        "url": "https://daily.zhihu.com/rss",
+        "category": "culture",
+        "tags": ["知识", "文化"],
         "is_high_risk_source": False
     },
 }

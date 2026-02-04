@@ -10,6 +10,13 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<'all' | 'high-risk' | 'tech' | 'finance' | 'policy' | 'culture'>('all');
 
+  // 计算各分类的新闻数量
+  const getCategoryCount = (category: string): number => {
+    if (category === 'all') return news.length;
+    if (category === 'high-risk') return news.filter(item => item.isHighRisk === true).length;
+    return news.filter(item => item.category === category).length;
+  };
+
   // Time formatting utility
   const formatTimeAgo = (dateString: string): string => {
     const date = new Date(dateString);
@@ -161,7 +168,7 @@ const Dashboard: React.FC = () => {
             <div>
               <p className="text-xs text-slate-400 font-medium mb-1">新闻声量</p>
               <div className="flex items-baseline gap-2">
-                <span className="text-4xl font-black text-slate-800 tracking-tight">1,240</span>
+                <span className="text-4xl font-black text-slate-800 tracking-tight">{news.length.toLocaleString()}</span>
                 <span className="text-xs font-bold text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-full flex items-center">
                   <span className="material-symbols-outlined text-[14px] mr-0.5 icon-filled">trending_up</span> +12%
                 </span>
@@ -250,7 +257,7 @@ const Dashboard: React.FC = () => {
               : 'bg-white text-slate-600 border border-slate-100 shadow-sm'
               }`}
           >
-            全部
+            全部 {!loading && <span className="text-[10px] opacity-70">({getCategoryCount('all')})</span>}
           </button>
           <button
             onClick={() => setActiveFilter('high-risk')}
@@ -259,7 +266,7 @@ const Dashboard: React.FC = () => {
               : 'bg-white text-slate-600 border border-slate-100 shadow-sm'
               }`}
           >
-            <span className="text-orange-500">🔥</span> 高风险
+            <span className="text-orange-500">🔥</span> 高风险 {!loading && <span className="text-[10px] opacity-70">({getCategoryCount('high-risk')})</span>}
           </button>
           <button
             onClick={() => setActiveFilter('tech')}
@@ -268,7 +275,7 @@ const Dashboard: React.FC = () => {
               : 'bg-white text-slate-600 border border-slate-100 shadow-sm'
               }`}
           >
-            <span className="text-blue-500">🤖</span> 科技
+            <span className="text-blue-500">🤖</span> 科技 {!loading && <span className="text-[10px] opacity-70">({getCategoryCount('tech')})</span>}
           </button>
           <button
             onClick={() => setActiveFilter('finance')}
@@ -277,7 +284,7 @@ const Dashboard: React.FC = () => {
               : 'bg-white text-slate-600 border border-slate-100 shadow-sm'
               }`}
           >
-            <span className="text-green-500">💰</span> 财经
+            <span className="text-green-500">💰</span> 财经 {!loading && <span className="text-[10px] opacity-70">({getCategoryCount('finance')})</span>}
           </button>
           <button
             onClick={() => setActiveFilter('policy')}
@@ -286,7 +293,7 @@ const Dashboard: React.FC = () => {
               : 'bg-white text-slate-600 border border-slate-100 shadow-sm'
               }`}
           >
-            <span className="text-red-500">📋</span> 政策
+            <span className="text-red-500">📋</span> 政策 {!loading && <span className="text-[10px] opacity-70">({getCategoryCount('policy')})</span>}
           </button>
           <button
             onClick={() => setActiveFilter('culture')}
@@ -295,7 +302,7 @@ const Dashboard: React.FC = () => {
               : 'bg-white text-slate-600 border border-slate-100 shadow-sm'
               }`}
           >
-            <span className="text-pink-500">🎨</span> 人文
+            <span className="text-pink-500">🎨</span> 人文 {!loading && <span className="text-[10px] opacity-70">({getCategoryCount('culture')})</span>}
           </button>
         </div>
       </div>
@@ -325,11 +332,21 @@ const Dashboard: React.FC = () => {
             });
 
             if (filteredNews.length === 0) {
+              const emptyMessages = {
+                'all': { emoji: '📭', title: '暂无新闻', subtitle: '系统中还没有任何新闻内容' },
+                'high-risk': { emoji: '✅', title: '无高风险新闻', subtitle: '当前没有需要特别关注的高风险新闻' },
+                'tech': { emoji: '🤖', title: '暂无科技新闻', subtitle: '科技分类下暂时没有内容' },
+                'finance': { emoji: '💰', title: '暂无财经新闻', subtitle: '财经分类下暂时没有内容' },
+                'policy': { emoji: '📋', title: '暂无政策新闻', subtitle: '政策分类下暂时没有内容' },
+                'culture': { emoji: '🎨', title: '暂无人文新闻', subtitle: '人文分类下暂时没有内容' },
+              };
+              const message = emptyMessages[activeFilter] || emptyMessages['all'];
+
               return (
                 <div className="text-center py-20">
-                  <div className="text-6xl mb-4">📭</div>
-                  <p className="text-slate-400 font-medium">暂无新闻</p>
-                  <p className="text-xs text-slate-300 mt-2">该分类下暂时没有内容</p>
+                  <div className="text-6xl mb-4">{message.emoji}</div>
+                  <p className="text-slate-400 font-medium">{message.title}</p>
+                  <p className="text-xs text-slate-300 mt-2">{message.subtitle}</p>
                 </div>
               );
             }

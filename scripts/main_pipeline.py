@@ -78,16 +78,17 @@ async def main():
         sentiment = analyze_sentiment_simple(full_text)
         
         # Prepare for DB
-        # Note: 'category' is not in RSS, defaulting to 'tech' or inferring
         db_item = {
             "source": item['source'],
-            "title": title[:200], # Trucate if too long
+            "title": title[:200], # Truncate if too long
             "summary": summary[:500],
+            "content": item.get('content', ''),  # 保存完整内容
+            "link": item.get('link', ''),  # 保存原文链接
             "tags": tags,
             "sentiment": sentiment,
             "image_url": "https://picsum.photos/200/300?random=" + str(len(title)), # Placeholder image
-            "is_high_risk": sentiment == 'negative', # Simple rule
-            "category": "tech", # Default
+            "is_high_risk": item.get('is_high_risk', sentiment == 'negative'), # 使用配置或基于情感分析
+            "category": item.get('category', 'tech'), # 使用RSS源配置的category
             # 'created_at' will be auto-generated or we can parse item['published'] if we convert to ISO properly
         }
         
