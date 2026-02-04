@@ -9,6 +9,7 @@ const Dashboard: React.FC = () => {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<'all' | 'high-risk' | 'tech' | 'finance' | 'policy' | 'culture'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // 计算各分类的新闻数量
   const getCategoryCount = (category: string): number => {
@@ -89,6 +90,14 @@ const Dashboard: React.FC = () => {
     // 可以后续改进为对比yesterday的数据
     const estimatedGrowth = Math.min(Math.round((news.length / 50) * 20), 99);
     return `+${estimatedGrowth}%`;
+  };
+
+  // 处理搜索框回车事件
+  const handleSearchKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && searchQuery.trim()) {
+      // 跳转到Assistant页面，并通过state传递消息
+      navigate('/assistant', { state: { initialMessage: searchQuery } });
+    }
   };
 
   const pieData = calculateSentimentDistribution();
@@ -192,6 +201,9 @@ const Dashboard: React.FC = () => {
           <input
             type="text"
             placeholder="✨ 问问 AI 现在的流行趋势..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyPress={handleSearchKeyPress}
             className="w-full h-14 pl-14 pr-12 rounded-2xl border-none bg-white text-sm font-medium placeholder-slate-400 focus:ring-0"
           />
           <div className="absolute right-4 top-1/2 -translate-y-1/2">

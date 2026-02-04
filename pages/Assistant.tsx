@@ -1,14 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { ChatMessage } from '../types';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 
 const Assistant: React.FC = () => {
   const { user } = useAuth();
+  const location = useLocation();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const initialMessageSent = useRef(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -67,36 +70,48 @@ const Assistant: React.FC = () => {
     };
   }, [user]);
 
-  const handleSend = async () => {
-    if (!inputText.trim() || !user) return;
+  // 处理从 Dashboard 传来的初始消息
+  useEffect(() => {
+    const state = location.state as { initialMessage?: string } | null;
+    if (state?.initialMessage && !initialMessageSent.current && user && !loading) {
+      initialMessageSent.current = true;
+      // 自动设置并发送消息
+      setInputText(state.initialMessage);
+      // 延迟一下发送，让用户看到消息
+      setTimeout(() => {
+        handleSendMessage(state.initialMessage!);
+      }, 300);
+    }
+  }, [location, user, loading]);
 
-    const text = inputText;
+  const handleSendMessage = async (message?: string) => {
+    const textToSend = message || inputText;
+    if (!textToSend.trim() || !user) return;
+
     setInputText('');
-
-    // Optimistic User UI update?
-    // Let's just wait for DB confirm for simplicity or basic optimistic
 
     const { error } = await supabase.from('chat_messages').insert({
       user_id: user.id,
-      content: text,
+      content: textToSend,
       is_ai: false
     });
 
     if (error) {
       console.error('Error sending message:', error);
-      // specific error handling
     } else {
-      // Mock AI response for demo if no backend logic exists to trigger it
+      // Mock AI response
       setTimeout(async () => {
-        // Check if we need to auto-reply (in a real app, a backend function would do this)
-        // For this demo, we can just insert a mock AI reply after a delay
         await supabase.from('chat_messages').insert({
           user_id: user.id,
-          content: "I received your message: " + text + ". Currently I am a simple demo bot.",
+          content: "我收到了你的问题：" + textToSend + "。作为AI舆情助手，我正在分析相关新闻数据...",
           is_ai: true
         });
       }, 1000);
     }
+  };
+
+  const handleSend = () => {
+    handleSendMessage();
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
