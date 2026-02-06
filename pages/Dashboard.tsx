@@ -428,19 +428,27 @@ const Dashboard: React.FC = () => {
                     {item.title}
                   </h3>
                   <div className="flex gap-2">
-                    {item.tags.map(tag => (
+                    {/* 情感分析标签 - 总是显示为第一个标签 */}
+                    {item.sentiment === 'positive' && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 bg-green-50 text-green-600 rounded-lg flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[10px] icon-filled">sentiment_satisfied</span> 积极
+                      </span>
+                    )}
+                    {item.sentiment === 'negative' && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 bg-orange-50 text-orange-600 rounded-lg flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[10px] icon-filled">sentiment_dissatisfied</span> 负面
+                      </span>
+                    )}
+                    {item.sentiment === 'neutral' && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-600 rounded-lg flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[10px] icon-filled">sentiment_neutral</span> 中性
+                      </span>
+                    )}
+
+                    {/* 普通标签 - 限制显示前2个 */}
+                    {item.tags.slice(0, 2).map(tag => (
                       <span key={tag} className="text-[10px] font-bold px-2 py-0.5 bg-blue-50 text-blue-500 rounded-lg"># {tag}</span>
                     ))}
-                    {item.sentiment === 'negative' && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 bg-orange-50 text-orange-500 rounded-lg flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[10px] icon-filled">warning</span> 负面
-                      </span>
-                    )}
-                    {item.sentiment === 'positive' && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 bg-green-50 text-green-500 rounded-lg flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[10px] icon-filled">thumb_up</span> 积极
-                      </span>
-                    )}
                   </div>
                 </div>
                 <div className="w-20 h-20 bg-slate-200 rounded-2xl flex-shrink-0 overflow-hidden">

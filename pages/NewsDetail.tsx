@@ -3,10 +3,15 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { NewsItem } from '../types';
 import { supabase } from '../lib/supabase';
 
+// 扩展NewsItem类型以支持images数组
+interface ExtendedNewsItem extends NewsItem {
+    images?: string[];
+}
+
 const NewsDetail: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const [news, setNews] = useState<NewsItem | null>(null);
+    const [news, setNews] = useState<ExtendedNewsItem | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -43,7 +48,7 @@ const NewsDetail: React.FC = () => {
                     console.error('Error fetching news detail:', error);
                     setError('获取新闻详情失败');
                 } else if (data) {
-                    const newsItem: NewsItem = {
+                    const newsItem: ExtendedNewsItem = {
                         id: data.id,
                         source: data.source,
                         time: formatTimeAgo(data.created_at),
@@ -55,7 +60,8 @@ const NewsDetail: React.FC = () => {
                         isHighRisk: data.is_high_risk,
                         summary: data.summary,
                         content: data.content,
-                        link: data.link
+                        link: data.link,
+                        images: data.images || []  // 添加images数组支持
                     };
                     setNews(newsItem);
                 }
@@ -169,6 +175,31 @@ const NewsDetail: React.FC = () => {
                             摘要
                         </h3>
                         <p className="text-sm text-slate-700 leading-relaxed">{news.summary}</p>
+                    </div>
+                )}
+
+                {/* Content Images */}
+                {news.images && news.images.length > 0 && (
+                    <div className="mb-6">
+                        <h3 className="text-sm font-bold text-slate-500 mb-3 flex items-center gap-2">
+                            <span className="material-symbols-outlined text-[18px]">photo_library</span>
+                            新闻配图
+                        </h3>
+                        <div className="grid grid-cols-1 gap-4">
+                            {news.images.map((imgUrl, index) => (
+                                <div key={index} className="rounded-2xl overflow-hidden bg-slate-200">
+                                    <img
+                                        src={imgUrl}
+                                        alt={`${news.title} - 图片 ${index + 1}`}
+                                        className="w-full h-auto object-contain max-h-96"
+                                        onError={(e) => {
+                                            // 图片加载失败时隐藏
+                                            (e.target as HTMLElement).style.display = 'none';
+                                        }}
+                                    />
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 )}
 

@@ -10,35 +10,87 @@ const Statistics: React.FC = () => {
   useEffect(() => {
     const fetchTrends = async () => {
       try {
-        // 从news表获取所有新闻
-        const { data: newsData, error } = await supabase
+        // 计算时间范围
+        const now = new Date();
+        let startDate: Date;
+
+        switch (timeframe) {
+          case '24h':
+            startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+            break;
+          case '7d':
+            startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            break;
+          case '30d':
+            startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            break;
+          default:
+            startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        }
+
+        // 从news表获取当前时间范围的新闻
+        const { data: currentPeriodData, error: currentError } = await supabase
+          .from('news')
+          .select('tags, created_at')
+          .gte('created_at', startDate.toISOString())
+          .order('created_at', { ascending: false });
+
+        if (currentError) {
+          console.error('Error fetching current period news:', currentError);
+          setLoading(false);
+          return;
+        }
+
+        // 获取上一个周期的数据用于计算增长率
+        let previousStartDate: Date;
+        switch (timeframe) {
+          case '24h':
+            previousStartDate = new Date(startDate.getTime() - 24 * 60 * 60 * 1000);
+            break;
+          case '7d':
+            previousStartDate = new Date(startDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+            break;
+          case '30d':
+            previousStartDate = new Date(startDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+            break;
+          default:
+            previousStartDate = new Date(startDate.getTime() - 24 * 60 * 60 * 1000);
+        }
+
+        const { data: previousPeriodData } = await supabase
           .from('news')
           .select('tags')
-          .order('created_at', { ascending: false })
-          .limit(200); // 获取最近200条新闻用于统计
+          .gte('created_at', previousStartDate.toISOString())
+          .lt('created_at', startDate.toISOString());
 
-        if (error) {
-          console.error('Error fetching news:', error);
+        if (!currentPeriodData || currentPeriodData.length === 0) {
+          setTrends([]);
           setLoading(false);
           return;
         }
 
-        if (!newsData || newsData.length === 0) {
-          setLoading(false);
-          return;
-        }
-
-        // 统计标签出现次数
-        const tagCounts: { [key: string]: number } = {};
-        newsData.forEach((item: any) => {
+        // 统计当前周期标签出现次数
+        const currentTagCounts: { [key: string]: number } = {};
+        currentPeriodData.forEach((item: any) => {
           const tags = item.tags || [];
           tags.forEach((tag: string) => {
-            tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+            currentTagCounts[tag] = (currentTagCounts[tag] || 0) + 1;
           });
         });
 
+        // 统计上一周期标签出现次数
+        const previousTagCounts: { [key: string]: number } = {};
+        if (previousPeriodData && previousPeriodData.length > 0) {
+          previousPeriodData.forEach((item: any) => {
+            const tags = item.tags || [];
+            tags.forEach((tag: string) => {
+              previousTagCounts[tag] = (previousTagCounts[tag] || 0) + 1;
+            });
+          });
+        }
+
         // 转换为数组并排序
-        const sortedTags = Object.entries(tagCounts)
+        const sortedTags = Object.entries(currentTagCounts)
           .map(([name, count]) => ({ name, count }))
           .sort((a, b) => b.count - a.count)
           .slice(0, 10); // 取前10个
@@ -57,13 +109,20 @@ const Statistics: React.FC = () => {
           'from-indigo-400 to-indigo-600',
         ];
 
-        // 转换为TrendItem格式
+        // 转换为TrendItem格式，计算真实增长率
         const trendItems: TrendItem[] = sortedTags.map((tag, index) => {
-          // 计算增长率（简化版：基于排名和出现次数估算）
-          const maxCount = sortedTags[0].count;
-          const growth = index === 0
-            ? Math.round(Math.random() * 5 + 10) // 第一名随机10-15%增长
-            : Math.round((tag.count / maxCount) * 15 - 10 + Math.random() * 10); // 其他根据占比计算
+          // 计算真实增长率
+          const currentCount = tag.count;
+          const previousCount = previousTagCounts[tag.name] || 0;
+
+          let growth = 0;
+          if (previousCount === 0 && currentCount > 0) {
+            // 新标签，标记为100%增长
+            growth = 100;
+          } else if (previousCount > 0) {
+            // 计算百分比变化
+            growth = Math.round(((currentCount - previousCount) / previousCount) * 100);
+          }
 
           return {
             id: index + 1,
@@ -91,7 +150,7 @@ const Statistics: React.FC = () => {
     }, 60000);
 
     return () => clearInterval(intervalId);
-  }, []);
+  }, [timeframe]); // 添加timeframe依赖，当切换时重新获取数据
 
   return (
     <div className="min-h-screen bg-[#F8F9FB] flex flex-col relative overflow-hidden pb-32">
