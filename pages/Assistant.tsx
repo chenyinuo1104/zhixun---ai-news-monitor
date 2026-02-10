@@ -10,8 +10,10 @@ const Assistant: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
+  const [isAIResponding, setIsAIResponding] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const initialMessageSent = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -86,11 +88,29 @@ const Assistant: React.FC = () => {
 
   const handleSendMessage = async (message?: string) => {
     const textToSend = message || inputText;
-    if (!textToSend.trim() || !user) return;
+    if (!textToSend.trim() || !user || isAIResponding) return;
 
     setInputText('');
 
-    // 发送用户消息
+    // 立即显示用户消息（乐观更新）
+    const userMessage: ChatMessage = {
+      id: `temp-user-${Date.now()}`,
+      role: 'user',
+      content: textToSend,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    setMessages(prev => [...prev, userMessage]);
+
+    // 立即显示AI"正在思考"消息
+    const thinkingMessage: ChatMessage = {
+      id: 'temp-thinking',
+      role: 'assistant',
+      content: '正在思考...',
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    setMessages(prev => [...prev, thinkingMessage]);
+
+    // 发送用户消息到数据库
     const { error } = await supabase.from('chat_messages').insert({
       user_id: user.id,
       content: textToSend,
@@ -99,11 +119,19 @@ const Assistant: React.FC = () => {
 
     if (error) {
       console.error('Error sending message:', error);
+      // 移除临时消息
+      setMessages(prev => prev.filter(m => m.id !== userMessage.id && m.id !== thinkingMessage.id));
       return;
     }
 
     // 调用DeepSeek API生成回复
     try {
+      // 设置AI正在回答状态
+      setIsAIResponding(true);
+
+      // 创建新的AbortController
+      abortControllerRef.current = new AbortController();
+
       // 动态导入DeepSeek服务
       const { callDeepSeek, getNewsContext } = await import('../lib/deepseek');
 
@@ -126,30 +154,80 @@ const Assistant: React.FC = () => {
           content: msg.content
         })) || [];
 
-      // 调用DeepSeek API
-      const aiResponse = await callDeepSeek(messageHistory, newsContext);
+      // 调用DeepSeek API，传入signal
+      const aiResponse = await callDeepSeek(
+        messageHistory,
+        newsContext,
+        abortControllerRef.current.signal
+      );
 
-      // 保存AI回复到数据库
-      await supabase.from('chat_messages').insert({
+      console.log('✅ AI回复内容:', aiResponse);
+
+      // 移除"正在思考"消息
+      setMessages(prev => prev.filter(m => m.id !== thinkingMessage.id));
+
+      // 创建AI消息对象
+      const aiMessage: ChatMessage = {
+        id: `ai-${Date.now()}`,
+        role: 'assistant',
+        content: aiResponse,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+
+      // 立即在UI中显示AI回复
+      setMessages(prev => [...prev, aiMessage]);
+
+      // 保存AI回复到数据库（后台保存，不影响UI显示）
+      const { error: insertError } = await supabase.from('chat_messages').insert({
         user_id: user.id,
         content: aiResponse,
         is_ai: true
       });
 
+      if (insertError) {
+        console.error('❌ 保存AI回复到数据库失败:', insertError);
+      } else {
+        console.log('✅ AI回复已保存到数据库');
+      }
+
     } catch (error) {
       console.error('DeepSeek API调用失败:', error);
 
-      // 发送错误提示
-      await supabase.from('chat_messages').insert({
-        user_id: user.id,
-        content: `抱歉，AI助手暂时无法回复。错误信息：${error instanceof Error ? error.message : '未知错误'}`,
-        is_ai: true
-      });
+      // 移除"正在思考"消息
+      setMessages(prev => prev.filter(m => m.id !== thinkingMessage.id));
+
+      // 检查是否是用户主动终止
+      if (error instanceof Error && error.name === 'AbortError') {
+        // 用户主动终止，插入提示消息
+        await supabase.from('chat_messages').insert({
+          user_id: user.id,
+          content: '⏸️ 已终止回答',
+          is_ai: true
+        });
+      } else {
+        // 其他错误，发送错误提示
+        await supabase.from('chat_messages').insert({
+          user_id: user.id,
+          content: `抱歉，AI助手暂时无法回复。错误信息：${error instanceof Error ? error.message : '未知错误'}`,
+          is_ai: true
+        });
+      }
+    } finally {
+      // 恢复状态
+      setIsAIResponding(false);
+      abortControllerRef.current = null;
     }
   };
 
   const handleSend = () => {
+    if (isAIResponding) return;
     handleSendMessage();
+  };
+
+  const handleAbort = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -229,9 +307,20 @@ const Assistant: React.FC = () => {
                       AI 舆情分析师 <span className="px-2 py-0.5 rounded-full bg-orange-100 text-orange-600 text-[9px] border border-orange-200 font-black">BOT</span>
                     </span>
                     <div className="bg-white/60 backdrop-blur-xl border border-white/60 rounded-[2rem] rounded-tl-sm p-6 relative shadow-sm">
-                      <div className="text-[15px] leading-relaxed text-slate-700 font-medium">
-                        {msg.content}
-                      </div>
+                      {msg.id === 'temp-thinking' ? (
+                        <div className="flex items-center gap-2 text-[15px] leading-relaxed text-slate-500 font-medium">
+                          <span>{msg.content}</span>
+                          <div className="flex gap-1">
+                            <span className="w-1.5 h-1.5 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                            <span className="w-1.5 h-1.5 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                            <span className="w-1.5 h-1.5 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-[15px] leading-relaxed text-slate-700 font-medium">
+                          {msg.content}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -257,12 +346,18 @@ const Assistant: React.FC = () => {
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={handleKeyPress}
+              disabled={isAIResponding}
             />
             <button
-              onClick={handleSend}
-              className="bg-gradient-to-br from-orange-400 to-pink-500 text-white p-3 rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform"
+              onClick={isAIResponding ? handleAbort : handleSend}
+              className={`text-white p-3 rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-all ${isAIResponding
+                ? 'bg-gradient-to-br from-red-400 to-red-600'
+                : 'bg-gradient-to-br from-orange-400 to-pink-500'
+                }`}
             >
-              <span className="material-symbols-outlined text-[22px] ml-0.5 icon-filled">send</span>
+              <span className="material-symbols-outlined text-[22px] ml-0.5 icon-filled">
+                {isAIResponding ? 'stop' : 'send'}
+              </span>
             </button>
           </div>
         </div>

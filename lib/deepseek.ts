@@ -30,11 +30,13 @@ export interface DeepSeekResponse {
  * 调用DeepSeek API生成回复
  * @param messages 消息历史
  * @param newsContext 新闻上下文（可选）
+ * @param signal AbortSignal用于取消请求（可选）
  * @returns AI回复内容
  */
 export async function callDeepSeek(
     messages: Message[],
-    newsContext?: string
+    newsContext?: string,
+    signal?: AbortSignal
 ): Promise<string> {
     if (!DEEPSEEK_API_KEY) {
         throw new Error('DeepSeek API密钥未配置');
@@ -77,7 +79,8 @@ ${newsContext}
                 top_p: 0.95,
                 frequency_penalty: 0.0,
                 presence_penalty: 0.0
-            })
+            }),
+            signal // 添加signal以支持终止请求
         });
 
         if (!response.ok) {
