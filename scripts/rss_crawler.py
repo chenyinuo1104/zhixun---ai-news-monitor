@@ -183,12 +183,11 @@ def fetch_news(feed_config, feed_name):
     
     crawler_error_handler.log_info(f"开始抓取: {feed_name} ({feed_url})")
     
-    # 计算前一天的时间范围
+    # 计算最近12小时的时间范围
     now = datetime.now()
-    yesterday_start = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    yesterday_end = (now - timedelta(days=1)).replace(hour=23, minute=59, second=59, microsecond=999999)
+    start_time = now - timedelta(hours=12)
     
-    crawler_error_handler.log_info(f"   时间筛选: {yesterday_start.strftime('%Y-%m-%d %H:%M')} 至 {yesterday_end.strftime('%Y-%m-%d %H:%M')}")
+    crawler_error_handler.log_info(f"   时间筛选: {start_time.strftime('%Y-%m-%d %H:%M')} 至 {now.strftime('%Y-%m-%d %H:%M')}")
 
     
     try:
@@ -231,14 +230,14 @@ def fetch_news(feed_config, feed_name):
                         # 如果无法解析时间，跳过此新闻
                         continue
                 
-                # 时间筛选：只保留前一天的新闻
+                # 时间筛选：只保留最近12小时的新闻
                 if published_time:
-                    if published_time < yesterday_start:
+                    if published_time < start_time:
                         skipped_old += 1
                         continue  # 太旧，跳过
-                    if published_time > yesterday_end:
+                    if published_time > now:
                         skipped_future += 1
-                        continue  # 太新（今天的），跳过
+                        continue  # 未来时间（不合理），跳过
                 else:
                     # 没有时间信息，跳过
                     continue

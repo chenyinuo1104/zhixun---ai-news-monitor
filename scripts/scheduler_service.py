@@ -5,7 +5,7 @@
 自动定时运行新闻爬虫，将数据存入 Supabase
 
 功能：
-- 每天凌晨2点自动运行爬虫
+- 每12小时自动运行爬虫（每天0点和12点）
 - 支持自定义调度时间
 - 完整的日志记录
 - 错误处理和重试机制
@@ -83,9 +83,10 @@ def main():
     log_message("")
     
     # 配置定时任务
-    # 每天凌晨2点运行
-    schedule.every().day.at("02:00").do(run_crawler)
-    log_message("⏰ 已配置定时任务: 每天 02:00 执行")
+    # 每12小时运行一次（每天0点和12点）
+    schedule.every().day.at("00:00").do(run_crawler)
+    schedule.every().day.at("12:00").do(run_crawler)
+    log_message("⏰ 已配置定时任务: 每天 00:00 和 12:00 执行")
     
     # 可选：每隔4小时运行一次（取消下面的注释启用）
     # schedule.every(4).hours.do(run_crawler)
