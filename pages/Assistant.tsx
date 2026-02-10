@@ -90,6 +90,7 @@ const Assistant: React.FC = () => {
 
     setInputText('');
 
+    // 发送用户消息
     const { error } = await supabase.from('chat_messages').insert({
       user_id: user.id,
       content: textToSend,
@@ -98,15 +99,52 @@ const Assistant: React.FC = () => {
 
     if (error) {
       console.error('Error sending message:', error);
-    } else {
-      // Mock AI response
-      setTimeout(async () => {
-        await supabase.from('chat_messages').insert({
-          user_id: user.id,
-          content: "我收到了你的问题：" + textToSend + "。作为AI舆情助手，我正在分析相关新闻数据...",
-          is_ai: true
-        });
-      }, 1000);
+      return;
+    }
+
+    // 调用DeepSeek API生成回复
+    try {
+      // 动态导入DeepSeek服务
+      const { callDeepSeek, getNewsContext } = await import('../lib/deepseek');
+
+      // 获取新闻上下文
+      const newsContext = await getNewsContext(supabase, 10);
+
+      // 获取最近的对话历史（最多5轮）
+      const { data: recentMessages } = await supabase
+        .from('chat_messages')
+        .select('content, is_ai')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      // 构建消息历史（API格式）
+      const messageHistory = recentMessages
+        ?.reverse()
+        .map((msg: any) => ({
+          role: (msg.is_ai ? 'assistant' : 'user') as 'user' | 'assistant',
+          content: msg.content
+        })) || [];
+
+      // 调用DeepSeek API
+      const aiResponse = await callDeepSeek(messageHistory, newsContext);
+
+      // 保存AI回复到数据库
+      await supabase.from('chat_messages').insert({
+        user_id: user.id,
+        content: aiResponse,
+        is_ai: true
+      });
+
+    } catch (error) {
+      console.error('DeepSeek API调用失败:', error);
+
+      // 发送错误提示
+      await supabase.from('chat_messages').insert({
+        user_id: user.id,
+        content: `抱歉，AI助手暂时无法回复。错误信息：${error instanceof Error ? error.message : '未知错误'}`,
+        is_ai: true
+      });
     }
   };
 
