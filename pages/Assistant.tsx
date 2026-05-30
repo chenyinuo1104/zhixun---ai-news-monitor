@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { ChatMessage } from '../types';
 import { supabase } from '../lib/supabase';
@@ -15,54 +15,55 @@ const Assistant: React.FC = () => {
   const initialMessageSent = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
   useEffect(() => {
-    scrollToBottom();
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setMessages([]);
+      setLoading(false);
+      return;
+    }
 
-    // Fetch initial messages
     const fetchMessages = async () => {
       const { data, error } = await supabase
         .from('chat_messages')
         .select('*')
         .order('created_at', { ascending: true });
 
-      if (error) console.error('Error fetching messages:', error);
-      else if (data) {
-        setMessages(data.map((msg: any) => ({
-          id: msg.id,
-          role: msg.is_ai ? 'assistant' : 'user',
-          content: msg.content,
-          time: new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        })));
+      if (error) {
+        console.error('Error fetching messages:', error);
+      } else if (data) {
+        setMessages(
+          data.map((msg: any) => ({
+            id: msg.id,
+            role: msg.is_ai ? 'assistant' : 'user',
+            content: msg.content,
+            time: new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          }))
+        );
       }
       setLoading(false);
     };
 
     fetchMessages();
 
-    // Subscribe to new messages
     const subscription = supabase
       .channel('chat_messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
         const newMsg = payload.new;
-        // Avoid potentially duplicating if we insert it locally optimized, but here we just listen
-        // We'll insert locally for immediate feedback then dedupe or just rely on fetch? 
-        // Simplest: just append if ID not exists.
         setMessages((prev) => {
-          if (prev.find(m => m.id === newMsg.id)) return prev;
-          return [...prev, {
-            id: newMsg.id,
-            role: newMsg.is_ai ? 'assistant' : 'user',
-            content: newMsg.content,
-            time: new Date(newMsg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          }];
+          if (prev.find((m) => m.id === newMsg.id)) return prev;
+          return [
+            ...prev,
+            {
+              id: newMsg.id,
+              role: newMsg.is_ai ? 'assistant' : 'user',
+              content: newMsg.content,
+              time: new Date(newMsg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            },
+          ];
         });
       })
       .subscribe();
@@ -72,73 +73,92 @@ const Assistant: React.FC = () => {
     };
   }, [user]);
 
-  // 处理从 Dashboard 传来的初始消息
   useEffect(() => {
     const state = location.state as { initialMessage?: string } | null;
-    if (state?.initialMessage && !initialMessageSent.current && user && !loading) {
+
+    if (state?.initialMessage && !initialMessageSent.current && !loading) {
       initialMessageSent.current = true;
-      // 自动设置并发送消息
       setInputText(state.initialMessage);
-      // 延迟一下发送，让用户看到消息
-      setTimeout(() => {
-        handleSendMessage(state.initialMessage!);
+      window.setTimeout(() => {
+        handleSendMessage(state.initialMessage);
       }, 300);
     }
-  }, [location, user, loading]);
+  }, [location, loading]);
 
   const handleSendMessage = async (message?: string) => {
     const textToSend = message || inputText;
-    if (!textToSend.trim() || !user || isAIResponding) return;
+    if (!textToSend.trim() || isAIResponding) return;
 
     setInputText('');
 
-    // 立即显示用户消息（乐观更新）
     const userMessage: ChatMessage = {
       id: `temp-user-${Date.now()}`,
       role: 'user',
       content: textToSend,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
-    setMessages(prev => [...prev, userMessage]);
 
-    // 立即显示AI"正在思考"消息
     const thinkingMessage: ChatMessage = {
       id: 'temp-thinking',
       role: 'assistant',
       content: '正在思考...',
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
-    setMessages(prev => [...prev, thinkingMessage]);
 
-    // 发送用户消息到数据库
+    setMessages((prev) => [...prev, userMessage, thinkingMessage]);
+    setIsAIResponding(true);
+
+    if (!user) {
+      try {
+        abortControllerRef.current = new AbortController();
+        const { callDeepSeek, getNewsContext } = await import('../lib/deepseek');
+        const newsContext = await getNewsContext(supabase, 10);
+        const aiResponse = await callDeepSeek(
+          [{ role: 'user', content: textToSend }],
+          newsContext,
+          abortControllerRef.current.signal
+        );
+        setMessages((prev) =>
+          prev.filter((m) => m.id !== thinkingMessage.id).concat({
+            id: `ai-${Date.now()}`,
+            role: 'assistant',
+            content: aiResponse,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          })
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'AI 回复失败';
+        setMessages((prev) =>
+          prev.filter((m) => m.id !== thinkingMessage.id).concat({
+            id: `ai-error-${Date.now()}`,
+            role: 'assistant',
+            content: message.includes('API密钥') ? `${message}。请在 .env 中配置 VITE_DEEPSEEK_API_KEY。` : message,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          })
+        );
+      } finally {
+        setIsAIResponding(false);
+      }
+      return;
+    }
+
     const { error } = await supabase.from('chat_messages').insert({
       user_id: user.id,
       content: textToSend,
-      is_ai: false
+      is_ai: false,
     });
 
     if (error) {
       console.error('Error sending message:', error);
-      // 移除临时消息
-      setMessages(prev => prev.filter(m => m.id !== userMessage.id && m.id !== thinkingMessage.id));
+      setMessages((prev) => prev.filter((m) => m.id !== userMessage.id && m.id !== thinkingMessage.id));
+      setIsAIResponding(false);
       return;
     }
 
-    // 调用DeepSeek API生成回复
     try {
-      // 设置AI正在回答状态
-      setIsAIResponding(true);
-
-      // 创建新的AbortController
       abortControllerRef.current = new AbortController();
-
-      // 动态导入DeepSeek服务
       const { callDeepSeek, getNewsContext } = await import('../lib/deepseek');
-
-      // 获取新闻上下文
       const newsContext = await getNewsContext(supabase, 10);
-
-      // 获取最近的对话历史（最多5轮）
       const { data: recentMessages } = await supabase
         .from('chat_messages')
         .select('content, is_ai')
@@ -146,108 +166,50 @@ const Assistant: React.FC = () => {
         .order('created_at', { ascending: false })
         .limit(10);
 
-      // 构建消息历史（API格式）
-      const messageHistory = recentMessages
-        ?.reverse()
+      const chatHistory = (recentMessages || [])
+        .reverse()
         .map((msg: any) => ({
-          role: (msg.is_ai ? 'assistant' : 'user') as 'user' | 'assistant',
-          content: msg.content
-        })) || [];
+          role: msg.is_ai ? 'assistant' as const : 'user' as const,
+          content: msg.content,
+        }));
 
-      // 调用DeepSeek API，传入signal
-      const aiResponse = await callDeepSeek(
-        messageHistory,
-        newsContext,
-        abortControllerRef.current.signal
-      );
+      const aiResponse = await callDeepSeek(chatHistory, newsContext, abortControllerRef.current.signal);
 
-      console.log('✅ AI回复内容:', aiResponse);
-
-      // 移除"正在思考"消息
-      setMessages(prev => prev.filter(m => m.id !== thinkingMessage.id));
-
-      // 创建AI消息对象
-      const aiMessage: ChatMessage = {
-        id: `ai-${Date.now()}`,
-        role: 'assistant',
-        content: aiResponse,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-
-      // 立即在UI中显示AI回复
-      setMessages(prev => [...prev, aiMessage]);
-
-      // 保存AI回复到数据库（后台保存，不影响UI显示）
-      const { error: insertError } = await supabase.from('chat_messages').insert({
+      await supabase.from('chat_messages').insert({
         user_id: user.id,
         content: aiResponse,
-        is_ai: true
+        is_ai: true,
       });
 
-      if (insertError) {
-        console.error('❌ 保存AI回复到数据库失败:', insertError);
-      } else {
-        console.log('✅ AI回复已保存到数据库');
-      }
-
+      setMessages((prev) => prev.filter((m) => m.id !== thinkingMessage.id));
     } catch (error) {
-      console.error('DeepSeek API调用失败:', error);
-
-      // 移除"正在思考"消息
-      setMessages(prev => prev.filter(m => m.id !== thinkingMessage.id));
-
-      // 检查是否是用户主动终止
-      if (error instanceof Error && error.name === 'AbortError') {
-        // 用户主动终止，插入提示消息
-        await supabase.from('chat_messages').insert({
-          user_id: user.id,
-          content: '⏸️ 已终止回答',
-          is_ai: true
-        });
-      } else {
-        // 其他错误，发送错误提示
-        await supabase.from('chat_messages').insert({
-          user_id: user.id,
-          content: `抱歉，AI助手暂时无法回复。错误信息：${error instanceof Error ? error.message : '未知错误'}`,
-          is_ai: true
-        });
-      }
+      console.error('AI response error:', error);
+      setMessages((prev) =>
+        prev.filter((m) => m.id !== thinkingMessage.id).concat({
+          id: `ai-error-${Date.now()}`,
+          role: 'assistant',
+          content: error instanceof Error ? error.message : 'AI 回复失败',
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        })
+      );
     } finally {
-      // 恢复状态
       setIsAIResponding(false);
-      abortControllerRef.current = null;
     }
   };
 
-  const handleSend = () => {
-    if (isAIResponding) return;
-    handleSendMessage();
-  };
-
-  const handleAbort = () => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
+  const handleStopGeneration = () => {
+    abortControllerRef.current?.abort();
+    setIsAIResponding(false);
+    setMessages((prev) => prev.filter((m) => m.id !== 'temp-thinking'));
   };
 
   return (
-    <div className="min-h-screen bg-[#FFFBF2] flex flex-col relative overflow-hidden text-slate-800">
-
-      {/* Dynamic Background */}
+    <div className="min-h-screen bg-[#FFF8F3] flex flex-col relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none z-0">
-        <div className="absolute top-0 left-0 w-full h-[60%] bg-gradient-to-b from-orange-50 via-yellow-50/50 to-transparent"></div>
-        <div className="absolute top-[-10%] right-[-20%] w-[400px] h-[400px] bg-orange-200/20 rounded-full blur-[80px]"></div>
-        <div className="absolute top-[20%] left-[-10%] w-[300px] h-[300px] bg-yellow-200/30 rounded-full blur-[60px]"></div>
+        <div className="absolute top-[-10%] right-[-20%] w-[400px] h-[400px] bg-orange-100/50 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-[20%] left-[-10%] w-[300px] h-[300px] bg-pink-100/50 rounded-full blur-3xl"></div>
       </div>
 
-      {/* Header */}
       <header className="relative z-20 px-5 py-4 flex items-center justify-between bg-white/70 backdrop-blur-xl border-b border-white/50 sticky top-0">
         <button className="p-2 -ml-2 text-slate-500 hover:bg-orange-50 rounded-full transition-colors">
           <span className="material-symbols-outlined">menu</span>
@@ -257,30 +219,25 @@ const Assistant: React.FC = () => {
             <span className="material-symbols-outlined text-orange-500 icon-filled">bubble_chart</span>
             AI 舆情助手
           </h1>
-          <div className="flex items-center gap-1.5">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-            </span>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">实时在线</span>
-          </div>
         </div>
         <button className="p-2 -mr-2 text-slate-500 hover:bg-orange-50 rounded-full transition-colors">
           <span className="material-symbols-outlined">history</span>
         </button>
       </header>
 
-      {/* Chat Area */}
       <main className="flex-1 overflow-y-auto no-scrollbar p-5 pb-48 relative z-10 space-y-8">
         <div className="flex justify-center py-2">
           <span className="text-[10px] font-bold text-slate-400 bg-white/60 px-4 py-1.5 rounded-full shadow-sm backdrop-blur border border-white/50">
-            今天 ✨ {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            今天 {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
         </div>
 
-        {/* Messages */}
         {loading ? (
           <div className="text-center text-slate-400 text-sm">Loading chat history...</div>
+        ) : messages.length === 0 ? (
+          <div className="text-center text-slate-400 text-sm py-12">
+            基于数据库中的最新新闻提问，例如热点趋势或情感分析
+          </div>
         ) : (
           messages.map((msg) => (
             msg.role === 'user' ? (
@@ -301,27 +258,11 @@ const Assistant: React.FC = () => {
                     <div className="absolute inset-0 bg-white/20 rounded-2xl"></div>
                     <span className="material-symbols-outlined text-white text-2xl icon-filled drop-shadow-md z-10">diamond</span>
                   </div>
-
                   <div className="flex flex-col w-full max-w-[95%]">
-                    <span className="text-[11px] font-bold text-slate-400 mb-2 ml-1 flex items-center gap-1">
-                      AI 舆情分析师 <span className="px-2 py-0.5 rounded-full bg-orange-100 text-orange-600 text-[9px] border border-orange-200 font-black">BOT</span>
-                    </span>
-                    <div className="bg-white/60 backdrop-blur-xl border border-white/60 rounded-[2rem] rounded-tl-sm p-6 relative shadow-sm">
-                      {msg.id === 'temp-thinking' ? (
-                        <div className="flex items-center gap-2 text-[15px] leading-relaxed text-slate-500 font-medium">
-                          <span>{msg.content}</span>
-                          <div className="flex gap-1">
-                            <span className="w-1.5 h-1.5 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                            <span className="w-1.5 h-1.5 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                            <span className="w-1.5 h-1.5 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="text-[15px] leading-relaxed text-slate-700 font-medium">
-                          {msg.content}
-                        </div>
-                      )}
+                    <div className="bg-white/80 backdrop-blur-md border border-white px-6 py-5 rounded-[1.8rem] rounded-tl-md text-[15px] leading-relaxed text-slate-700 shadow-sm whitespace-pre-wrap">
+                      {msg.content}
                     </div>
+                    <span className="text-[10px] text-slate-400 font-bold mt-1.5 ml-2">{msg.time}</span>
                   </div>
                 </div>
               </div>
@@ -329,40 +270,41 @@ const Assistant: React.FC = () => {
           ))
         )}
         <div ref={messagesEndRef} />
-
       </main>
 
-      {/* Input Area */}
-      <div className="fixed bottom-[100px] left-0 right-0 z-40 flex justify-center pointer-events-none">
-        <div className="w-full max-w-[430px] px-4 pointer-events-auto">
-          <div className="flex items-end gap-2 bg-white/80 backdrop-blur-xl rounded-[2.5rem] p-2 pr-3 border border-white shadow-[0_8px_32px_rgba(255,143,92,0.15)] focus-within:ring-2 focus-within:ring-orange-200 transition-all">
-            <button className="p-3 text-slate-400 hover:text-orange-500 transition-colors rounded-full">
-              <span className="material-symbols-outlined text-[24px]">add_circle</span>
-            </button>
-            <textarea
-              className="flex-1 bg-transparent border-0 focus:ring-0 p-3 text-slate-700 placeholder:text-slate-400 resize-none max-h-24 text-[15px] font-medium"
-              placeholder="询问近期热点事件..."
-              rows={1}
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              onKeyDown={handleKeyPress}
-              disabled={isAIResponding}
-            />
+      <div className="absolute bottom-28 left-0 right-0 z-30 px-5">
+        <div className="bg-white/90 backdrop-blur-xl border border-white rounded-[2rem] shadow-[0_10px_40px_rgba(0,0,0,0.08)] p-2 flex items-end gap-2">
+          <textarea
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage();
+              }
+            }}
+            placeholder="问问 AI 现在的舆情趋势..."
+            rows={1}
+            className="flex-1 bg-transparent border-none resize-none px-4 py-3 text-sm text-slate-700 placeholder-slate-400 focus:ring-0 max-h-32"
+          />
+          {isAIResponding ? (
             <button
-              onClick={isAIResponding ? handleAbort : handleSend}
-              className={`text-white p-3 rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-all ${isAIResponding
-                ? 'bg-gradient-to-br from-red-400 to-red-600'
-                : 'bg-gradient-to-br from-orange-400 to-pink-500'
-                }`}
+              onClick={handleStopGeneration}
+              className="w-12 h-12 rounded-full bg-slate-200 flex items-center justify-center shrink-0"
             >
-              <span className="material-symbols-outlined text-[22px] ml-0.5 icon-filled">
-                {isAIResponding ? 'stop' : 'send'}
-              </span>
+              <span className="material-symbols-outlined text-slate-600">stop</span>
             </button>
-          </div>
+          ) : (
+            <button
+              onClick={() => handleSendMessage()}
+              disabled={!inputText.trim()}
+              className="w-12 h-12 rounded-full bg-gradient-to-tr from-orange-400 to-pink-500 flex items-center justify-center shrink-0 disabled:opacity-40 shadow-lg"
+            >
+              <span className="material-symbols-outlined text-white icon-filled">send</span>
+            </button>
+          )}
         </div>
       </div>
-
     </div>
   );
 };

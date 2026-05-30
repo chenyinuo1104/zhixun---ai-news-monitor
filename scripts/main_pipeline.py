@@ -14,6 +14,7 @@ import generate_summary
 
 # 导入新增的模块
 import sentiment_analyzer
+import news_classifier
 import deduplication
 from error_handler import ErrorHandler
 
@@ -102,6 +103,9 @@ async def main():
                 # 情感分析（使用新的智能分析器）
                 sentiment_result = sentiment_analyzer.analyze_news(title, content)
                 
+                # 智能分类新闻
+                category = news_classifier.classify_news(title, content, item.get('category'))
+                
                 # 提取关键词
                 full_text = title + " " + summary
                 tags = generate_summary.extract_keywords(full_text)
@@ -117,7 +121,7 @@ async def main():
                     "sentiment": sentiment_result['sentiment'],
                     "image_url": "https://picsum.photos/200/300?random=" + str(len(title)),  # Placeholder image
                     "is_high_risk": sentiment_result['is_high_risk'],  # 使用智能分析结果
-                    "category": item.get('category', 'tech'),
+                    "category": category,  # 使用智能分类结果，不确定时为 None
                 }
                 
                 try:

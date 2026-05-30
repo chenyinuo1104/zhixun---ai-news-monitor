@@ -27,6 +27,38 @@ export interface DeepSeekResponse {
 }
 
 /**
+ * 清理 AI 回答中的无效字符
+ * @param text 原始文本
+ * @returns 清理后的文本
+ */
+function cleanAIResponse(text: string): string {
+  let cleaned = text;
+  
+  // 移除 Markdown 标题符号 (#)
+  cleaned = cleaned.replace(/^#+\s*/gm, '');
+  
+  // 移除粗体符号 (**)
+  cleaned = cleaned.replace(/\*\*([^*]+)\*\*/g, '$1');
+  
+  // 移除斜体符号 (*)
+  cleaned = cleaned.replace(/\*([^*]+)\*/g, '$1');
+  
+  // 移除多余的 * 符号
+  cleaned = cleaned.replace(/\*+/g, '');
+  
+  // 移除多余的 # 符号
+  cleaned = cleaned.replace(/#+/g, '');
+  
+  // 清理多余的空行
+  cleaned = cleaned.replace(/\n\s*\n\s*\n/g, '\n\n');
+  
+  // 清理开头和结尾的空白
+  cleaned = cleaned.trim();
+  
+  return cleaned;
+}
+
+/**
  * 调用DeepSeek API生成回复
  * @param messages 消息历史
  * @param newsContext 新闻上下文（可选）
@@ -34,17 +66,17 @@ export interface DeepSeekResponse {
  * @returns AI回复内容
  */
 export async function callDeepSeek(
-    messages: Message[],
-    newsContext?: string,
-    signal?: AbortSignal
+  messages: Message[],
+  newsContext?: string,
+  signal?: AbortSignal
 ): Promise<string> {
-    if (!DEEPSEEK_API_KEY) {
-        throw new Error('DeepSeek API密钥未配置');
-    }
+  if (!DEEPSEEK_API_KEY) {
+    throw new Error('DeepSeek API密钥未配置');
+  }
 
-    // 构建系统提示词
-    const systemPrompt = newsContext
-        ? `你是一个专业的AI舆情分析助手，负责帮助用户分析和理解新闻资讯。
+  // 构建系统提示词
+  const systemPrompt = newsContext
+    ? `你是一个专业的AI舆情分析助手，负责帮助用户分析和理解新闻资讯。
 
 你的主要能力包括：
 1. 分析新闻趋势和舆情动向
@@ -55,56 +87,57 @@ export async function callDeepSeek(
 当前新闻数据库中的最新资讯：
 ${newsContext}
 
-请基于以上新闻数据，为用户提供准确、有用的分析和回答。回答要简洁明了，重点突出。`
-        : `你是一个专业的AI舆情分析助手。你能够分析新闻趋势、解读舆情动向，并为用户提供客观专业的观点。请用简洁明了的方式回答用户问题。`;
+请基于以上新闻数据，为用户提供准确、有用的分析和回答。回答要简洁明了，重点突出。不要使用 Markdown 格式，直接用纯文本回答。`
+    : `你是一个专业的AI舆情分析助手。你能够分析新闻趋势、解读舆情动向，并为用户提供客观专业的观点。请用简洁明了的方式回答用户问题。不要使用 Markdown 格式，直接用纯文本回答。`;
 
-    // 准备请求消息
-    const requestMessages: Message[] = [
-        { role: 'system', content: systemPrompt },
-        ...messages
-    ];
+  // 准备请求消息
+  const requestMessages: Message[] = [
+    { role: 'system', content: systemPrompt },
+    ...messages
+  ];
 
-    try {
-        const response = await fetch(DEEPSEEK_API_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
-            },
-            body: JSON.stringify({
-                model: 'deepseek-chat',
-                messages: requestMessages,
-                temperature: 0.7,
-                max_tokens: 2000,
-                top_p: 0.95,
-                frequency_penalty: 0.0,
-                presence_penalty: 0.0
-            }),
-            signal // 添加signal以支持终止请求
-        });
+  try {
+    const response = await fetch(DEEPSEEK_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        messages: requestMessages,
+        temperature: 0.7,
+        max_tokens: 2000,
+        top_p: 0.95,
+        frequency_penalty: 0.0,
+        presence_penalty: 0.0
+      }),
+      signal // 添加signal以支持终止请求
+    });
 
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(
-                `DeepSeek API请求失败: ${response.status} ${response.statusText}${errorData.error ? ` - ${JSON.stringify(errorData.error)}` : ''
-                }`
-            );
-        }
-
-        const data: DeepSeekResponse = await response.json();
-
-        if (!data.choices || data.choices.length === 0) {
-            throw new Error('DeepSeek API返回数据格式错误');
-        }
-
-        return data.choices[0].message.content;
-    } catch (error) {
-        console.error('DeepSeek API调用错误:', error);
-        if (error instanceof Error) {
-            throw error;
-        }
-        throw new Error('调用DeepSeek API时发生未知错误');
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        `DeepSeek API请求失败: ${response.status} ${response.statusText}${errorData.error ? ` - ${JSON.stringify(errorData.error)}` : ''
+        }`
+      );
     }
+
+    const data: DeepSeekResponse = await response.json();
+
+    if (!data.choices || data.choices.length === 0) {
+      throw new Error('DeepSeek API返回数据格式错误');
+    }
+
+    // 清理 AI 回答中的无效字符
+    return cleanAIResponse(data.choices[0].message.content);
+  } catch (error) {
+    console.error('DeepSeek API调用错误:', error);
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error('调用DeepSeek API时发生未知错误');
+  }
 }
 
 /**

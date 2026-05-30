@@ -37,6 +37,7 @@ const Statistics: React.FC = () => {
 
         if (currentError) {
           console.error('Error fetching current period news:', currentError);
+          setTrends([]);
           setLoading(false);
           return;
         }
@@ -137,6 +138,7 @@ const Statistics: React.FC = () => {
         setTrends(trendItems);
       } catch (error) {
         console.error('Error:', error);
+        setTrends([]);
       } finally {
         setLoading(false);
       }
@@ -150,7 +152,7 @@ const Statistics: React.FC = () => {
     }, 60000);
 
     return () => clearInterval(intervalId);
-  }, [timeframe]); // 添加timeframe依赖，当切换时重新获取数据
+  }, [timeframe]);
 
   return (
     <div className="min-h-screen bg-[#F8F9FB] flex flex-col relative overflow-hidden pb-32">

@@ -20,14 +20,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Check active sessions and sets the user
+        // 清除旧的体验/正式模式标记
+        window.localStorage.removeItem('zhixun-demo-auth');
+        window.localStorage.removeItem('zhixun-live-mode');
+
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session);
             setUser(session?.user ?? null);
             setLoading(false);
         });
 
-        // Listen for changes on auth state (logged in, signed out, etc.)
         const {
             data: { subscription },
         } = supabase.auth.onAuthStateChange((_event, session) => {

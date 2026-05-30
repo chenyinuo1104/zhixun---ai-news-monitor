@@ -3,11 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { AreaChart, Area, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { NewsItem } from '../types';
 import { supabase } from '../lib/supabase';
+import { analyzeNews } from '../lib/sentimentAnalyzer';
+import { classifyNews } from '../lib/newsClassifier';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<'all' | 'high-risk' | 'tech' | 'finance' | 'policy' | 'culture'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -115,50 +118,65 @@ const Dashboard: React.FC = () => {
 
       if (error) {
         console.error('Error fetching news:', error);
+        setFetchError(error.message);
+        setNews([]);
       } else if (data) {
-        const formattedNews = data.map((item: any) => ({
-          id: item.id,
-          source: item.source,
-          time: formatTimeAgo(item.created_at),
-          title: item.title,
-          tags: item.tags || [],
-          sentiment: item.sentiment,
-          imageUrl: item.image_url,
-          category: item.category,
-          isHighRisk: item.is_high_risk,
-          summary: item.summary
-        }));
+        const formattedNews = data.map((item: any) => {
+          // 使用前端分析器重新分析情感和分类
+          const sentimentResult = analyzeNews(item.title, item.content || '');
+          const category = classifyNews(item.title, item.content || '');
+          
+          return {
+            id: item.id,
+            source: item.source,
+            time: formatTimeAgo(item.created_at),
+            title: item.title,
+            tags: item.tags || [],
+            sentiment: sentimentResult.sentiment,
+            imageUrl: item.image_url,
+            category: category,
+            isHighRisk: sentimentResult.isHighRisk,
+            summary: item.summary,
+            link: item.link
+          };
+        });
         setNews(formattedNews);
+        setFetchError(null);
       }
     } catch (error) {
       console.error('Error:', error);
+      setFetchError('无法连接数据库，请检查 .env 中的 Supabase 配置');
+      setNews([]);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    // Initial fetch
     fetchNews();
 
-    // Set up real-time subscription
     const channel = supabase
       .channel('news-changes')
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'news' },
         (payload) => {
           console.log('New news item:', payload.new);
+          // 使用前端分析器重新分析情感和分类
+          const sentimentResult = analyzeNews(payload.new.title, payload.new.content || '');
+          const category = classifyNews(payload.new.title, payload.new.content || '');
+          
           const newItem: NewsItem = {
             id: payload.new.id,
             source: payload.new.source,
             time: formatTimeAgo(payload.new.created_at),
             title: payload.new.title,
             tags: payload.new.tags || [],
-            sentiment: payload.new.sentiment,
+            sentiment: sentimentResult.sentiment,
             imageUrl: payload.new.image_url,
-            category: payload.new.category,
-            isHighRisk: payload.new.is_high_risk,
-            summary: payload.new.summary
+            category: category,
+            isHighRisk: sentimentResult.isHighRisk,
+            summary: payload.new.summary,
+            link: payload.new.link
           };
           setNews(prev => [newItem, ...prev]);
         }
@@ -376,6 +394,11 @@ const Dashboard: React.FC = () => {
         </div>
 
         <div className="flex flex-col gap-4">
+          {fetchError && (
+            <div className="rounded-2xl bg-red-50 border border-red-100 px-4 py-3 text-xs text-red-600 font-medium">
+              数据库连接失败：{fetchError}
+            </div>
+          )}
           {loading ? (
             <div className="text-center text-slate-400 py-10">加载中...</div>
           ) : (() => {
@@ -413,10 +436,12 @@ const Dashboard: React.FC = () => {
             return filteredNews.map(item => (
               <div
                 key={item.id}
-                onClick={() => navigate(`/news/${item.id}`)}
-                className="glass-panel p-4 rounded-3xl shadow-sm border border-slate-100 flex gap-4 cursor-pointer hover:shadow-md hover:border-primary/20 transition-all active:scale-[0.98]"
+                className="glass-panel p-4 rounded-3xl shadow-sm border border-slate-100 flex gap-4 hover:shadow-md hover:border-primary/20 transition-all"
               >
-                <div className="flex-1">
+                <div 
+                  onClick={() => navigate(`/news/${item.id}`)}
+                  className="flex-1 cursor-pointer active:scale-[0.98] transition-transform"
+                >
                   <div className="flex items-center gap-2 mb-2">
                     <div className="w-5 h-5 bg-slate-100 rounded-full flex items-center justify-center">
                       <span className="material-symbols-outlined text-[14px] text-slate-500">public</span>
@@ -451,8 +476,21 @@ const Dashboard: React.FC = () => {
                     ))}
                   </div>
                 </div>
-                <div className="w-20 h-20 bg-slate-200 rounded-2xl flex-shrink-0 overflow-hidden">
-                  <img src={item.imageUrl} alt="news" className="w-full h-full object-cover opacity-90" />
+                <div className="flex flex-col gap-2">
+                  {item.link && (
+                    <a
+                      href={item.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-20 h-10 bg-primary/10 hover:bg-primary/20 rounded-xl flex items-center justify-center transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-primary text-sm">open_in_new</span>
+                    </a>
+                  )}
+                  <div className="w-20 h-10 bg-slate-200 rounded-xl overflow-hidden">
+                    <img src={item.imageUrl} alt="news" className="w-full h-full object-cover opacity-90" />
+                  </div>
                 </div>
               </div>
             ))
